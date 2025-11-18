@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>2D Mobile Multiplayer PvP</title>
 <style>
-    body{margin:0;padding:0;overflow:hidden;background:#87CEEB;font-family:Arial;}
-    canvas{display:block;margin:0 auto;background:#a2d149;}
-    .button{position:absolute;width:60px;height:60px;background:rgba(255,255,255,0.5);
-        border-radius:50%;text-align:center;line-height:60px;font-size:24px;user-select:none;}
-    #left{bottom:20px;left:20px;}
-    #right{bottom:20px;left:100px;}
-    #jump{bottom:20px;right:100px;}
+body{margin:0;padding:0;overflow:hidden;background:#87CEEB;font-family:Arial;}
+canvas{display:block;margin:0 auto;background:#a2d149;}
+.button{position:absolute;width:60px;height:60px;background:rgba(255,255,255,0.5);
+border-radius:50%;text-align:center;line-height:60px;font-size:24px;user-select:none;}
+#left{bottom:20px;left:20px;}
+#right{bottom:20px;left:100px;}
+#jump{bottom:20px;right:100px;}
+#attack{bottom:90px;right:20px;}
 </style>
 </head>
 <body>
@@ -19,62 +20,45 @@
 <div id="left" class="button">◀</div>
 <div id="right" class="button">▶</div>
 <div id="jump" class="button">⬆</div>
+<div id="attack" class="button">⚔</div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const gravity = 0.5, friction = 0.9;
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+const gravity=0.5,friction=0.9;
+const platforms=[{x:0,y:550,width:800,height:50},{x:200,y:450,width:150,height:20},{x:400,y:350,width:200,height:20},{x:650,y:250,width:100,height:20}];
 
-// Platforms
-const platforms = [
-    {x:0,y:550,width:800,height:50},
-    {x:200,y:450,width:150,height:20},
-    {x:400,y:350,width:200,height:20},
-    {x:650,y:250,width:100,height:20}
-];
-
-// Player local
-const player = {x:100,y:400,width:40,height:40, color:'red', vx:0,vy:0,speed:4,jumping:false,onGround:false,health:100};
-const keys = {left:false,right:false,jump:false};
+// Local player
+const player={x:100,y:400,width:40,height:40,color:'red',vx:0,vy:0,speed:4,jumping:false,onGround:false};
+const keys={left:false,right:false,jump:false,attack:false};
 
 // Touch buttons
-document.getElementById('left').addEventListener('touchstart', e=>keys.left=true);
-document.getElementById('left').addEventListener('touchend', e=>keys.left=false);
-document.getElementById('right').addEventListener('touchstart', e=>keys.right=true);
-document.getElementById('right').addEventListener('touchend', e=>keys.right=false);
-document.getElementById('jump').addEventListener('touchstart', e=>keys.jump=true);
-document.getElementById('jump').addEventListener('touchend', e=>keys.jump=false);
+document.getElementById('left').addEventListener('touchstart',()=>keys.left=true);
+document.getElementById('left').addEventListener('touchend',()=>keys.left=false);
+document.getElementById('right').addEventListener('touchstart',()=>keys.right=true);
+document.getElementById('right').addEventListener('touchend',()=>keys.right=false);
+document.getElementById('jump').addEventListener('touchstart',()=>keys.jump=true);
+document.getElementById('jump').addEventListener('touchend',()=>keys.jump=false);
+document.getElementById('attack').addEventListener('touchstart',()=>{keys.attack=true;socket.emit('attack');});
+document.getElementById('attack').addEventListener('touchend',()=>keys.attack=false);
 
 // Keyboard
-window.addEventListener('keydown', e=>{
-    if(e.key==='ArrowLeft') keys.left=true;
-    if(e.key==='ArrowRight') keys.right=true;
-    if(e.key==='ArrowUp') keys.jump=true;
-});
-window.addEventListener('keyup', e=>{
-    if(e.key==='ArrowLeft') keys.left=false;
-    if(e.key==='ArrowRight') keys.right=false;
-    if(e.key==='ArrowUp') keys.jump=false;
-});
+window.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')keys.left=true;if(e.key==='ArrowRight')keys.right=true;if(e.key==='ArrowUp')keys.jump=true;if(e.key===' ') {keys.attack=true; socket.emit('attack');}});
+window.addEventListener('keyup',e=>{if(e.key==='ArrowLeft')keys.left=false;if(e.key==='ArrowRight')keys.right=false;if(e.key==='ArrowUp')keys.jump=false;if(e.key===' ') keys.attack=false;});
 
 // Socket.io
-const socket = io();
-let otherPlayers = {};
+const socket=io();
+let otherPlayers={};
+socket.on('players',data=>{otherPlayers=data;});
 
-// Receive all players
-socket.on('players', (data)=>{otherPlayers=data;});
-
-// Update local position to server
-function sendPosition(){
-    socket.emit('playerMove',{x:player.x,y:player.y});
-}
+// Send local position
+function sendPosition(){socket.emit('playerMove',{x:player.x,y:player.y});}
 
 // Game update
 function update(){
-    // Movement
-    if(keys.left) player.vx=-player.speed;
-    else if(keys.right) player.vx=player.speed;
+    if(keys.left)player.vx=-player.speed;
+    else if(keys.right)player.vx=player.speed;
     else player.vx*=friction;
     if(keys.jump && player.onGround){player.vy=-10; player.onGround=false; player.jumping=true;}
 
@@ -82,19 +66,16 @@ function update(){
     player.x+=player.vx;
     player.y+=player.vy;
 
-    // Collision
     player.onGround=false;
-    platforms.forEach(plat=>{
-        if(player.x<plat.x+plat.width &&
-           player.x+player.width>plat.x &&
-           player.y<plat.y+plat.height &&
-           player.y+player.height>plat.y){
-            if(player.vy>0){player.y=plat.y-player.height;player.vy=0;player.onGround=true;player.jumping=false;}
-        }
+    platforms.forEach(p=>{
+        if(player.x<p.x+p.width && player.x+player.width>p.x &&
+           player.y<p.y+p.height && player.y+player.height>p.y){
+               if(player.vy>0){player.y=p.y-player.height;player.vy=0;player.onGround=true;player.jumping=false;}
+           }
     });
 
-    if(player.x<0) player.x=0;
-    if(player.x+player.width>canvas.width) player.x=canvas.width-player.width;
+    if(player.x<0)player.x=0;
+    if(player.x+player.width>canvas.width)player.x=canvas.width-player.width;
     if(player.y+player.height>canvas.height){player.y=canvas.height-player.height;player.vy=0;player.onGround=true;player.jumping=false;}
 
     sendPosition();
@@ -103,19 +84,18 @@ function update(){
 // Draw
 function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    // Platforms
-    ctx.fillStyle='#654321';
-    platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.width,p.height));
-    // Local player
-    ctx.fillStyle=player.color;
-    ctx.fillRect(player.x,player.y,player.width,player.height);
-    // Other players
+    ctx.fillStyle='#654321';platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.width,p.height));
+
+    // Draw all players
     for(let id in otherPlayers){
-        if(otherPlayers[id] && id!==socket.id){
-            const p=otherPlayers[id];
-            ctx.fillStyle=p.color||'blue';
-            ctx.fillRect(p.x,p.y,p.width||40,p.height||40);
-        }
+        const p=otherPlayers[id];
+        if(!p.alive) continue;
+        ctx.fillStyle=p.color||'blue';
+        ctx.fillRect(p.x,p.y,p.width||40,p.height||40);
+
+        // Health bar
+        ctx.fillStyle='red';
+        ctx.fillRect(p.x,p.y-10,(p.width||40)*(p.health/100),5);
     }
 }
 

@@ -1,1 +1,188 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Mobile PvP (Horizontal)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #87CEEB; /* sky blue */
+            font-family: Arial, sans-serif;
+            touch-action: none; /* mobile touch optimization */
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: #a2d149; /* ground color */
+        }
+
+        /* Virtual buttons for mobile */
+        .button {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: rgba(255,255,255,0.5);
+            border-radius: 50%;
+            text-align: center;
+            line-height: 60px;
+            font-size: 24px;
+            user-select: none;
+        }
+
+        #left { bottom: 20px; left: 20px; }
+        #right { bottom: 20px; left: 100px; }
+        #jump { bottom: 20px; right: 100px; }
+        #attack { bottom: 20px; right: 20px; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <!-- Virtual buttons -->
+    <div id="left" class="button">◀</div>
+    <div id="right" class="button">▶</div>
+    <div id="jump" class="button">⬆</div>
+    <div id="attack" class="button">⚔</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const gravity = 0.5;
+        const friction = 0.9;
+
+        // Player object
+        const player = {
+            x: 100,
+            y: 400,
+            width: 40,
+            height: 40,
+            color: 'red',
+            vx: 0,
+            vy: 0,
+            speed: 4,
+            jumping: false,
+            onGround: false,
+            health: 100
+        };
+
+        // Platforms (Terraria style)
+        const platforms = [
+            {x:0, y:550, width:800, height:50},
+            {x:200, y:450, width:150, height:20},
+            {x:400, y:350, width:200, height:20},
+            {x:650, y:250, width:100, height:20}
+        ];
+
+        // Controls
+        const keys = {left:false, right:false, jump:false, attack:false};
+
+        // Touch buttons
+        document.getElementById('left').addEventListener('touchstart', e=>keys.left=true);
+        document.getElementById('left').addEventListener('touchend', e=>keys.left=false);
+        document.getElementById('right').addEventListener('touchstart', e=>keys.right=true);
+        document.getElementById('right').addEventListener('touchend', e=>keys.right=false);
+        document.getElementById('jump').addEventListener('touchstart', e=>keys.jump=true);
+        document.getElementById('jump').addEventListener('touchend', e=>keys.jump=false);
+        document.getElementById('attack').addEventListener('touchstart', e=>keys.attack=true);
+        document.getElementById('attack').addEventListener('touchend', e=>keys.attack=false);
+
+        // Keyboard support (optional)
+        window.addEventListener('keydown', e=>{
+            if(e.key==='ArrowLeft') keys.left=true;
+            if(e.key==='ArrowRight') keys.right=true;
+            if(e.key==='ArrowUp') keys.jump=true;
+            if(e.key===' ') keys.attack=true;
+        });
+        window.addEventListener('keyup', e=>{
+            if(e.key==='ArrowLeft') keys.left=false;
+            if(e.key==='ArrowRight') keys.right=false;
+            if(e.key==='ArrowUp') keys.jump=false;
+            if(e.key===' ') keys.attack=false;
+        });
+
+        // Update function
+        function update() {
+            // Horizontal movement
+            if(keys.left) player.vx = -player.speed;
+            else if(keys.right) player.vx = player.speed;
+            else player.vx *= friction;
+
+            // Jump
+            if(keys.jump && player.onGround) {
+                player.vy = -10;
+                player.jumping = true;
+                player.onGround = false;
+            }
+
+            // Gravity
+            player.vy += gravity;
+
+            // Move player
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Platform collision
+            player.onGround = false;
+            platforms.forEach(plat => {
+                if(player.x < plat.x + plat.width &&
+                   player.x + player.width > plat.x &&
+                   player.y < plat.y + plat.height &&
+                   player.y + player.height > plat.y) {
+
+                    // Simple collision response
+                    if(player.vy > 0) {
+                        player.y = plat.y - player.height;
+                        player.vy = 0;
+                        player.onGround = true;
+                        player.jumping = false;
+                    }
+                }
+            });
+
+            // Boundaries
+            if(player.x < 0) player.x = 0;
+            if(player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if(player.y + player.height > canvas.height) {
+                player.y = canvas.height - player.height;
+                player.vy = 0;
+                player.onGround = true;
+                player.jumping = false;
+            }
+        }
+
+        // Draw function
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw platforms
+            ctx.fillStyle = '#654321';
+            platforms.forEach(plat => {
+                ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+            });
+
+            // Draw player
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Draw health bar
+            ctx.fillStyle = 'red';
+            ctx.fillRect(player.x, player.y - 10, player.width * (player.health / 100), 5);
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>

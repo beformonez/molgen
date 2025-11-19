@@ -1,8 +1,13 @@
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
-const io = require('socket.io')(http, { cors: { origin: "*" } });
+const io = require('socket.io')(http, { 
+    cors: { origin: "*" },
+    pingInterval: 2500,
+    pingTimeout: 5000
+});
 
+// PUBLIC folder serve
 app.use(express.static(__dirname + '/../public'));
 
 let players = {};
@@ -10,54 +15,76 @@ let players = {};
 io.on('connection', socket => {
     console.log('Player connected:', socket.id);
 
+    // Spawn new player
     players[socket.id] = {
-        x: Math.random()*700+50,
+        x: Math.random() * 500 + 50,
         y: 400,
         width: 40,
         height: 40,
-        color: 'red',
+        color: "hsl(" + Math.random()*360 + ",80%,60%)",
         health: 100,
         alive: true
     };
 
-    io.emit('players', players);
+    // Send player list only to new player
+    socket.emit("players", players);
 
-    // Player movement
+    // Broadcast new player to others
+    socket.broadcast.emit("newPlayer", { id: socket.id, data: players[socket.id] });
+
+    // Movement update (optimized)
     socket.on('playerMove', data => {
-        if(players[socket.id] && players[socket.id].alive){
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-        }
-        io.emit('players', players);
+        const p = players[socket.id];
+        if (!p || !p.alive) return;
+
+        p.x = data.x;
+        p.y = data.y;
     });
 
-    // Player attack
+    // Attack
     socket.on('attack', () => {
-        const attacker = players[socket.id];
-        if(!attacker || !attacker.alive) return;
-        for(let id in players){
-            if(id !== socket.id && players[id].alive){
-                const p = players[id];
-                // Simple hitbox check
-                if(Math.abs(attacker.x - p.x) < 50 && Math.abs(attacker.y - p.y) < 50){
-                    p.health -= 20;
-                    if(p.health <= 0){
-                        p.alive = false;
-                        p.health = 0;
-                        // respawn after 3 sec
-                        setTimeout(()=>{p.alive=true; p.health=100; p.x=100; p.y=400;},3000);
-                    }
+        const atk = players[socket.id];
+        if (!atk || !atk.alive) return;
+
+        for (let id in players) {
+            if (id === socket.id) continue;
+            const p = players[id];
+            if (!p.alive) continue;
+
+            // hit detection
+            const dx = Math.abs(atk.x - p.x);
+            const dy = Math.abs(atk.y - p.y);
+
+            if (dx < 60 && dy < 60) {
+                p.health -= 20;
+
+                if (p.health <= 0) {
+                    p.alive = false;
+                    p.health = 0;
+
+                    // respawn
+                    setTimeout(() => {
+                        p.alive = true;
+                        p.health = 100;
+                        p.x = Math.random()*500+100;
+                        p.y = 400;
+                    }, 2500);
                 }
             }
         }
-        io.emit('players', players);
     });
 
     socket.on('disconnect', () => {
         delete players[socket.id];
-        io.emit('players', players);
-        console.log('Player disconnected:', socket.id);
+        io.emit('removePlayer', socket.id);
+        console.log("Player disconnected:", socket.id);
     });
 });
 
-http.listen(3000, ()=>console.log('Server running on http://localhost:3000'));
+// Send world update 20 times/sec
+setInterval(() => {
+    io.emit("state", players);
+}, 50);
+
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => console.log(`Server running on port ${PORT}`));

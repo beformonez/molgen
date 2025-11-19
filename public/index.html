@@ -24,10 +24,21 @@ border-radius:50%;text-align:center;line-height:60px;font-size:24px;user-select:
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
-const canvas=document.getElementById('gameCanvas');
-const ctx=canvas.getContext('2d');
-const gravity=0.5,friction=0.9;
-const platforms=[
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// Load player sprite
+const playerSprite = new Image();
+playerSprite.src = "assets/sprite.png";  // <--- энд sprite.png байрлана
+
+const scale = 2;        // 64x64 → 128x128 болгоно
+const spriteSize = 64;  // original size
+const drawSize = spriteSize * scale; // final size 128x128
+
+const gravity = 0.5, friction = 0.9;
+
+const platforms = [
     {x:0,y:550,width:800,height:50},
     {x:200,y:450,width:150,height:20},
     {x:400,y:350,width:200,height:20},
@@ -35,100 +46,148 @@ const platforms=[
 ];
 
 // Local player
-const player={x:100,y:400,width:40,height:40,color:'red',vx:0,vy:0,speed:4,jumping:false,onGround:false};
+const player = {
+    x:100, y:400,
+    width: drawSize, height: drawSize,
+    vx:0, vy:0, speed:4,
+    jumping:false, onGround:false,
+    health:100
+};
+
 const keys={left:false,right:false,jump:false,attack:false};
 
-// Touch buttons
-document.getElementById('left').addEventListener('touchstart',()=>keys.left=true);
-document.getElementById('left').addEventListener('touchend',()=>keys.left=false);
-document.getElementById('right').addEventListener('touchstart',()=>keys.right=true);
-document.getElementById('right').addEventListener('touchend',()=>keys.right=false);
-document.getElementById('jump').addEventListener('touchstart',()=>keys.jump=true);
-document.getElementById('jump').addEventListener('touchend',()=>keys.jump=false);
-document.getElementById('attack').addEventListener('touchstart',()=>{keys.attack=true;socket.emit('attack');});
-document.getElementById('attack').addEventListener('touchend',()=>keys.attack=false);
-
-// Keyboard
-window.addEventListener('keydown',e=>{
-    if(e.key==='ArrowLeft') keys.left=true;
-    if(e.key==='ArrowRight') keys.right=true;
-    if(e.key==='ArrowUp') keys.jump=true;
-    if(e.key===' ') {keys.attack=true; socket.emit('attack');}
+// Touch input
+function bindTouch(id, prop){
+    document.getElementById(id).addEventListener("touchstart",()=>keys[prop]=true);
+    document.getElementById(id).addEventListener("touchend",()=>keys[prop]=false);
+}
+bindTouch("left","left");
+bindTouch("right","right");
+bindTouch("jump","jump");
+document.getElementById("attack").addEventListener("touchstart",()=>{
+    keys.attack = true;
+    socket.emit("attack");
 });
-window.addEventListener('keyup',e=>{
-    if(e.key==='ArrowLeft') keys.left=false;
-    if(e.key==='ArrowRight') keys.right=false;
-    if(e.key==='ArrowUp') keys.jump=false;
-    if(e.key===' ') keys.attack=false;
+document.getElementById("attack").addEventListener("touchend",()=>keys.attack=false);
+
+// Keyboard input
+window.addEventListener("keydown", e=>{
+    if(e.key==="ArrowLeft") keys.left=true;
+    if(e.key==="ArrowRight") keys.right=true;
+    if(e.key==="ArrowUp") keys.jump=true;
+    if(e.key===" ") { keys.attack=true; socket.emit("attack");}
+});
+window.addEventListener("keyup", e=>{
+    if(e.key==="ArrowLeft") keys.left=false;
+    if(e.key==="ArrowRight") keys.right=false;
+    if(e.key==="ArrowUp") keys.jump=false;
+    if(e.key===" ") keys.attack=false;
 });
 
 // Socket.io
-const socket=io();
-let otherPlayers={};
-socket.on('players',data=>{otherPlayers=data;});
+const socket = io();
+let otherPlayers = {};
 
-// Send local position
-function sendPosition(){socket.emit('playerMove',{x:player.x,y:player.y});}
+socket.on("players", data => {
+    otherPlayers = data;
+});
 
-// Game update
+// Send local position to server
+function sendPosition(){
+    socket.emit("playerMove", { x:player.x, y:player.y, health:player.health });
+}
+
+// Movement + physics
 function update(){
-    if(keys.left) player.vx=-player.speed;
-    else if(keys.right) player.vx=player.speed;
-    else player.vx*=friction;
+    if(keys.left)  player.vx = -player.speed;
+    else if(keys.right) player.vx = player.speed;
+    else player.vx *= friction;
 
-    if(keys.jump && player.onGround){player.vy=-10; player.onGround=false; player.jumping=true;}
+    if(keys.jump && player.onGround){
+        player.vy = -10;
+        player.onGround = false;
+        player.jumping = true;
+    }
 
-    player.vy+=gravity;
-    player.x+=player.vx;
-    player.y+=player.vy;
+    player.vy += gravity;
+    player.x += player.vx;
+    player.y += player.vy;
 
-    player.onGround=false;
+    player.onGround = false;
+
     platforms.forEach(p=>{
-        if(player.x<p.x+p.width && player.x+player.width>p.x &&
-           player.y<p.y+p.height && player.y+player.height>p.y){
-               if(player.vy>0){player.y=p.y-player.height;player.vy=0;player.onGround=true;player.jumping=false;}
-           }
+        if(player.x < p.x+p.width &&
+           player.x+player.width > p.x &&
+           player.y < p.y+p.height &&
+           player.y+player.height > p.y){
+            
+            if(player.vy > 0){
+                player.y = p.y - player.height;
+                player.vy = 0;
+                player.onGround = true;
+            }
+        }
     });
 
-    if(player.x<0)player.x=0;
-    if(player.x+player.width>2000)player.x=2000-player.width; // map limit
-    if(player.y+player.height>600){player.y=600-player.height;player.vy=0;player.onGround=true;player.jumping=false;}
+    // map limits
+    if(player.x < 0) player.x = 0;
+    if(player.x + player.width > 2000) player.x = 2000 - player.width;
+    if(player.y + player.height > 600){
+        player.y = 600 - player.height;
+        player.vy = 0;
+        player.onGround = true;
+    }
 
     sendPosition();
 }
 
-// Draw
+// Draw everything
 function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Camera follows local player
-    const camX = player.x - canvas.width/2;
-    const camY = 0;
+    // Camera center at player
+    const camX = player.x - canvas.width / 2 + drawSize/2;
 
     ctx.save();
-    ctx.translate(-camX,-camY);
+    ctx.translate(-camX, 0);
 
     // Draw platforms
-    ctx.fillStyle='#654321';
-    platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.width,p.height));
+    ctx.fillStyle = "#654321";
+    platforms.forEach(p => {
+        ctx.fillRect(p.x, p.y, p.width, p.height);
+    });
 
-    // Draw all players
+    // Draw local player with sprite
+    ctx.drawImage(
+        playerSprite,
+        player.x, player.y,
+        drawSize, drawSize
+    );
+
+    // Other players
     for(let id in otherPlayers){
-        const p=otherPlayers[id];
-        if(!p.alive) continue;
-        ctx.fillStyle=p.color||'blue';
-        ctx.fillRect(p.x,p.y,p.width||40,p.height||40);
+        const p = otherPlayers[id];
+        if(!p) continue;
 
-        // Health bar
-        ctx.fillStyle='red';
-        ctx.fillRect(p.x,p.y-10,(p.width||40)*(p.health/100),5);
+        ctx.drawImage(
+            playerSprite,
+            p.x, p.y,
+            drawSize, drawSize
+        );
+
+        // HP Bar
+        ctx.fillStyle = "red";
+        ctx.fillRect(p.x, p.y - 10, drawSize * (p.health / 100), 5);
     }
 
     ctx.restore();
 }
 
-// Game loop
-function gameLoop(){update();draw();requestAnimationFrame(gameLoop);}
+function gameLoop(){
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
 gameLoop();
 </script>
 </body>
